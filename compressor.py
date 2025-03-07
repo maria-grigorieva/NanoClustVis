@@ -2,7 +2,11 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Optional
 import numpy as np
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+import hdbscan
+from sklearn.cluster import Birch, OPTICS, MeanShift, AffinityPropagation, SpectralClustering
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import silhouette_score
 from scipy.cluster.hierarchy import linkage, fcluster
 from gensim.models import Word2Vec
@@ -49,7 +53,7 @@ class HierarchicalClustering(ClusteringMethod):
 class DBSCANClustering(ClusteringMethod):
     def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
         eps = self._estimate_eps(features)
-        return DBSCAN(eps=eps, min_samples=5).fit_predict(features)
+        return DBSCAN(eps=eps, min_samples=10).fit_predict(features)
 
     def _estimate_eps(self, features: np.ndarray) -> float:
         """Estimate eps parameter for DBSCAN"""
@@ -61,6 +65,107 @@ class DBSCANClustering(ClusteringMethod):
     def get_name(self) -> str:
         return "DBSCAN"
 
+class HDBSCANClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        min_samples = self._estimate_min_samples(features)
+        return hdbscan.HDBSCAN(min_samples=min_samples, min_cluster_size=10).fit_predict(features)
+
+    def _estimate_min_samples(self, features: np.ndarray) -> int:
+        """Estimate min_samples parameter for HDBSCAN"""
+        nn = NearestNeighbors(n_neighbors=2)
+        nn_dist = nn.fit(features).kneighbors(features)[0]
+        estimated_value = int(np.percentile(nn_dist[:, 1], 90))
+
+        return max(estimated_value, 1)
+
+    def get_name(self) -> str:
+        return "HDBSCAN"
+
+class BIRCHClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        threshold = self._estimate_threshold(features)
+        return Birch(n_clusters=n_clusters, threshold=threshold).fit_predict(features)
+
+    def _estimate_threshold(self, features: np.ndarray) -> float:
+        """Estimate threshold parameter for BIRCH"""
+        nn = NearestNeighbors(n_neighbors=2)
+        nn_dist = nn.fit(features).kneighbors(features)[0]
+        return np.percentile(nn_dist[:, 1], 75)  # 75th percentile of nearest neighbor distances
+
+    def get_name(self) -> str:
+        return "BIRCH"
+
+class OPTICSClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        min_samples = self._estimate_min_samples(features)
+        return OPTICS(min_samples=min_samples).fit_predict(features)
+
+    def _estimate_min_samples(self, features: np.ndarray) -> int:
+        """Estimate min_samples parameter for OPTICS"""
+        nn = NearestNeighbors(n_neighbors=2)
+        nn_dist = nn.fit(features).kneighbors(features)[0]
+        return max(2, int(np.percentile(nn_dist[:, 1], 90)))  # At least 2
+
+    def get_name(self) -> str:
+        return "OPTICS"
+
+class GMMClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        if n_clusters is None:
+            n_clusters = self._estimate_n_components(features)
+        return GaussianMixture(n_components=n_clusters, covariance_type='full').fit_predict(features)
+
+    def _estimate_n_components(self, features: np.ndarray) -> int:
+        """Estimate number of components using a simple heuristic"""
+        n_samples = features.shape[0]
+        return min(max(2, int(np.sqrt(n_samples) / 2)), 10)  # Rough heuristic
+
+    def get_name(self) -> str:
+        return "GMM"
+
+class MeanShiftClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        bandwidth = self._estimate_bandwidth(features)
+        return MeanShift(bandwidth=bandwidth).fit_predict(features)
+
+    def _estimate_bandwidth(self, features: np.ndarray) -> float:
+        """Estimate bandwidth parameter for Mean Shift"""
+        nn = NearestNeighbors(n_neighbors=5)
+        nn_dist = nn.fit(features).kneighbors(features)[0]
+        return np.percentile(nn_dist[:, 4], 50)  # Median distance to 5th neighbor
+
+    def get_name(self) -> str:
+        return "MeanShift"
+
+class AffinityPropagationClustering(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        damping = 0.5  # Default value, could be tuned
+        preference = self._estimate_preference(features)
+        return AffinityPropagation(damping=damping, preference=preference).fit_predict(features)
+
+    def _estimate_preference(self, features: np.ndarray) -> float:
+        """Estimate preference parameter for Affinity Propagation"""
+        nn = NearestNeighbors(n_neighbors=2)
+        nn_dist = nn.fit(features).kneighbors(features)[0]
+        median_dist = np.median(nn_dist[:, 1])
+        return -median_dist * 10  # Negative scaling factor for preference
+
+    def get_name(self) -> str:
+        return "AffinityPropagation"
+
+class SpectralClusteringMethod(ClusteringMethod):
+    def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+        if n_clusters is None:
+            n_clusters = self._estimate_n_clusters(features)
+        return SpectralClustering(n_clusters=n_clusters, affinity='nearest_neighbors').fit_predict(features)
+
+    def _estimate_n_clusters(self, features: np.ndarray) -> int:
+        """Estimate number of clusters for Spectral Clustering"""
+        n_samples = features.shape[0]
+        return min(max(2, int(np.sqrt(n_samples) / 2)), 10)  # Rough heuristic
+
+    def get_name(self) -> str:
+        return "SpectralClustering"
 
 class SequenceEmbedding(ABC):
     """Abstract base class for sequence embedding methods"""
@@ -164,37 +269,6 @@ class Bio2VecEmbedding(SequenceEmbedding):
     def get_name(self) -> str:
         return f"Bio2Vec_k{self.k_mer_size}"
 
-# class BERTEmbedding(SequenceEmbedding):
-#     def __init__(self):
-#         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-#         self.model = BertModel.from_pretrained('bert-base-uncased')
-#         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#         self.model.to(self.device)
-#
-#     def embed_sequences(self, sequences: List[List[SequenceMatch]]) -> np.ndarray:
-#         # Convert sequences to text representation
-#         sequence_texts = [
-#             ' '.join([f"{match.query_name}_{match.position}" for match in seq_matches])
-#             for seq_matches in sequences
-#         ]
-#
-#         embeddings = []
-#         with torch.no_grad():
-#             for text in sequence_texts:
-#                 inputs = self.tokenizer(text,
-#                                         return_tensors="pt",
-#                                         padding=True,
-#                                         truncation=True,
-#                                         max_length=512).to(self.device)
-#                 outputs = self.model(**inputs)
-#                 # Use [CLS] token embedding as sequence representation
-#                 embeddings.append(outputs.last_hidden_state[0, 0].cpu().numpy())
-#
-#         return np.array(embeddings)
-#
-#     def get_name(self) -> str:
-#         return "BERT"
-
 
 class IntelligentCompressor:
     def __init__(self,
@@ -285,7 +359,14 @@ class IntelligentCompressor:
         clustering_methods = [
             KMeansClustering(),
             HierarchicalClustering(),
-            DBSCANClustering()
+            DBSCANClustering(),
+            HDBSCANClustering(),
+            OPTICSClustering(),
+            BIRCHClustering(),
+            MeanShiftClustering(),
+            GMMClustering(),
+            SpectralClusteringMethod(),
+            AffinityPropagationClustering()
         ]
 
         scores = {}

@@ -1,11 +1,13 @@
-from compressor import IntelligentCompressor, KMeansClustering, HierarchicalClustering, DBSCANClustering, Word2VecEmbedding
+from compressor import IntelligentCompressor, KMeansClustering, HierarchicalClustering, DBSCANClustering, \
+    Word2VecEmbedding, HDBSCANClustering, BIRCHClustering, OPTICSClustering, GMMClustering, MeanShiftClustering, \
+    AffinityPropagationClustering, SpectralClusteringMethod
 from pathlib import Path
-from dataclasses import dataclass
+# from dataclasses import dataclass
 from reader import FastqProcessor, SequenceMatch
 from HeatMapVis import SequenceVisualizer
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import silhouette_score
+# from sklearn.metrics import silhouette_score
 
 
 def reverse_complement(seq: str) -> str:
@@ -14,25 +16,40 @@ def reverse_complement(seq: str) -> str:
     return seq.translate(complement)[::-1]
 
 def main():
-    fastq_file = Path("data_samples/FBA01901_barcode04.fastq")
+    fastq_file = Path("data_samples/FBA01901_barcode06.fastq")
     query_dict = {
         "Left_Primer": "CTTCATGGATCCTGCTCTCG",
         "Left_Rev_Compl": reverse_complement("CTTCATGGATCCTGCTCTCG"),
         "Right_Primer": "GGCCCTAAAGCTTAGCACGA",
         "Right_Rev_Compl": reverse_complement("GGCCCTAAAGCTTAGCACGA"),
-        "Barcode_4": "TAGGGAAACACGATAGAATCCGAA",
-        "Barcode_4_rev": "TTCGGATTCTATCGTGTTTCCCTA"
+        "Barcode_6": "GACTACTTTCTGCCTTTGCGAGAA",
+        "Barcode_6_rev": "TTCTCGCAAAGGCAGAAAGTAGTC"
     }
 
     # Process FASTQ file
     processor = FastqProcessor(fastq_file, query_dict)
     sequence_matches = processor.process_file()
 
+    visualizer = SequenceVisualizer(query_dict)
+    fig = visualizer.plot_raw_heatmap(sequence_matches)
+    fig.savefig(f'heatmap_raw.png',
+                bbox_inches='tight',
+                dpi=300)
+    plt.close()
+
+
     # Try different clustering methods
     clustering_methods = {
         'hierarchical': HierarchicalClustering(),
         'kmeans': KMeansClustering(),
-        'dbscan': DBSCANClustering()
+        'dbscan': DBSCANClustering(),
+        'hdbscan': HDBSCANClustering(),
+        'birch': BIRCHClustering(),
+        'optics': OPTICSClustering(),
+        'GMM': GMMClustering(),
+        'meanshift': MeanShiftClustering(),
+        'affinity': AffinityPropagationClustering(),
+        'spectral': SpectralClusteringMethod()
     }
 
     embedding_methods = {

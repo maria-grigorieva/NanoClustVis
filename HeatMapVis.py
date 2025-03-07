@@ -122,3 +122,60 @@ class SequenceVisualizer:
 
         plt.tight_layout()
         return plt.gcf()
+
+    def plot_raw_heatmap(self, matches: list, title: str = 'Sequence Match Positions') -> plt.Figure:
+        """Plot heatmap showing positions of sequence matches"""
+        plt.figure(figsize=(15, 10))  # Adjusted height since we don't need cluster info
+
+        # Create the main axis
+        ax_main = plt.gca()
+
+        # Calculate visualization width based on mean max position
+        vis_width = self.calculate_visualization_width(matches)
+        if vis_width == 0:
+            raise ValueError("No matches found in sequences")
+
+        # Create visualization matrix
+        vis_matrix = np.zeros((len(matches), vis_width))
+
+        # Create a dictionary to map query names to colors
+        unique_queries = set(match.query_name
+                             for sequence in matches
+                             for match in sequence)
+        color_dict = {query: idx + 1 for idx, query in enumerate(unique_queries)}
+
+        # Fill the visualization matrix
+        for i, sequence in enumerate(matches):
+            for match in sequence:
+                start_pos = match.position
+                end_pos = start_pos + match.length
+                vis_matrix[i, start_pos:end_pos] = color_dict[match.query_name]
+
+        # Create custom colormap
+        n_queries = len(self.query_dict)
+        colors = self.colors[:n_queries + 1]
+        cmap = ListedColormap(colors)
+
+        # Plot heatmap
+        sns.heatmap(vis_matrix,
+                    cmap=cmap,
+                    cbar=False,
+                    xticklabels=50,
+                    yticklabels=True,
+                    ax=ax_main)
+
+        # Add legend for queries
+        legend_elements = [plt.Rectangle((0, 0), 1, 1, facecolor=colors[color_dict[query]])
+                           for query in unique_queries]
+        ax_main.legend(legend_elements,
+                       list(unique_queries),
+                       bbox_to_anchor=(1.02, 1),
+                       loc='upper left')
+
+        # Set titles and labels
+        ax_main.set_title(title)
+        ax_main.set_xlabel('Position in Sequence (bp)')
+        ax_main.set_ylabel('Sequence Number')
+
+        plt.tight_layout()
+        return plt.gcf()
