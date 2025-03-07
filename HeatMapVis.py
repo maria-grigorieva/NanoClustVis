@@ -142,7 +142,8 @@ class SequenceVisualizer:
         unique_queries = set(match.query_name
                              for sequence in matches
                              for match in sequence)
-        color_dict = {query: idx + 1 for idx, query in enumerate(unique_queries)}
+
+        color_dict = {query_name: idx + 1 for idx, query_name in enumerate(self.query_dict.keys())}
 
         # Fill the visualization matrix
         for i, sequence in enumerate(matches):
