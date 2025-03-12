@@ -18,8 +18,8 @@ def reverse_complement(seq: str) -> str:
 def main():
     fastq_file = Path("data_samples/FBA01901_barcodes1_2_3_4.fastq")
     query_dict = {
-        "Aptamer_1": "CGAGAGC",
-        "Aptamer_2": "GGGCCAGCA",
+        "Aptamer/1": "TGC**CGAGAGC",
+        "Aptamer/2": "GGGCC*GCA",
         "Left": "CTTCATGGATCCTGCTCTCG",
         "RCLeft": reverse_complement("CTTCATGGATCCTGCTCTCG"),
         "Right": "GGCCCTAAAGCTTAGCACGA",

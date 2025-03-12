@@ -7,7 +7,7 @@ from sklearn.cluster import Birch, OPTICS, MeanShift, AffinityPropagation, Spect
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, pairwise_distances
 from scipy.cluster.hierarchy import linkage, fcluster
 from gensim.models import Word2Vec
 import torch
@@ -15,6 +15,7 @@ import torch
 import warnings
 from matcher import SequenceMatch
 from collections import defaultdict
+from sklearn.metrics import pairwise_distances
 
 warnings.filterwarnings('ignore')
 
@@ -270,6 +271,7 @@ class Bio2VecEmbedding(SequenceEmbedding):
         return f"Bio2Vec_k{self.k_mer_size}"
 
 
+
 class IntelligentCompressor:
     def __init__(self,
                  target_clusters: int = 100,
@@ -313,6 +315,64 @@ class IntelligentCompressor:
 
         return features
 
+    def calculate_cluster_diversity(self, features: np.ndarray) -> float:
+        """
+        Calculate the diversity score of a cluster based on feature distances.
+        Returns a score between 0 (uniform) and 1 (diverse).
+        """
+        if len(features) <= 1:
+            return 0.0
+
+        # Calculate pairwise distances
+        center = np.mean(features, axis=0)
+        distances = np.linalg.norm(features - center, axis=1)
+
+        # Normalize distances and calculate diversity score
+        max_dist = np.max(distances)
+        if max_dist == 0:
+            return 0.0
+
+        normalized_distances = distances / max_dist
+        diversity_score = np.mean(normalized_distances)
+
+        return diversity_score
+
+    def select_representative_sequences(self, features: np.ndarray,
+                                        n_samples: int) -> List[int]:
+        """
+        Select representative sequences using distance-based clustering.
+        Returns indices of representative sequences.
+        """
+        if len(features) <= n_samples:
+            return list(range(len(features)))
+
+        # Calculate center of the cluster
+        center = np.mean(features, axis=0)
+
+        # Calculate distances from center
+        distances = np.linalg.norm(features - center, axis=1)
+
+        # Initialize with the point closest to center
+        selected_indices = [np.argmin(distances)]
+        remaining_indices = set(range(len(features))) - set(selected_indices)
+
+        # Select remaining representatives
+        while len(selected_indices) < n_samples:
+            # Calculate minimum distance to any selected point for each remaining point
+            min_distances = []
+            for idx in remaining_indices:
+                dist_to_selected = [np.linalg.norm(features[idx] - features[sel_idx])
+                                    for sel_idx in selected_indices]
+                min_distances.append(min(dist_to_selected))
+
+            # Select the point with maximum minimum distance
+            remaining_indices_list = list(remaining_indices)
+            next_point = remaining_indices_list[np.argmax(min_distances)]
+            selected_indices.append(next_point)
+            remaining_indices.remove(next_point)
+
+        return sorted(selected_indices)
+
     def compress_sequences(self,
                            sequence_matches: List[List[SequenceMatch]],
                            max_width: int,
@@ -337,15 +397,50 @@ class IntelligentCompressor:
         clusters = self.clustering_method.fit_predict(features, self.target_clusters)
 
         # Select representative sequences
+        # Select representative sequences with diversity check
         compressed_matches = []
+        diversity_threshold = 0.3  # Adjust this threshold based on your needs
+
         for cluster_id in range(max(clusters) + 1):
             cluster_indices = np.where(clusters == cluster_id)[0]
+
             if len(cluster_indices) > 0:
                 cluster_features = features[cluster_indices]
-                cluster_center = np.mean(cluster_features, axis=0)
-                distances = np.linalg.norm(cluster_features - cluster_center, axis=1)
-                representative_idx = cluster_indices[np.argmin(distances)]
-                compressed_matches.append(sequence_matches[representative_idx])
+                diversity_score = self.calculate_cluster_diversity(cluster_features)
+
+                if diversity_score > diversity_threshold:
+                    # Cluster is diverse - select multiple representatives
+                    n_samples = max(1, int(len(cluster_indices) * 0.1))  # 10% of cluster size
+                    representative_indices = self.select_representative_sequences(
+                        cluster_features,
+                        n_samples
+                    )
+
+                    # Add selected representatives to compressed matches
+                    for idx in representative_indices:
+                        compressed_matches.append(sequence_matches[cluster_indices[idx]])
+
+                    print(f"Cluster {cluster_id}: Diversity = {diversity_score:.3f}, "
+                          f"Selected {len(representative_indices)} representatives "
+                          f"from {len(cluster_indices)} sequences")
+                else:
+                    # Cluster is uniform - select single representative
+                    cluster_center = np.mean(cluster_features, axis=0)
+                    distances = np.linalg.norm(cluster_features - cluster_center, axis=1)
+                    representative_idx = cluster_indices[np.argmin(distances)]
+                    compressed_matches.append(sequence_matches[representative_idx])
+
+                    print(f"Cluster {cluster_id}: Diversity = {diversity_score:.3f}, "
+                          f"Selected 1 representative from {len(cluster_indices)} sequences")
+        # compressed_matches = []
+        # for cluster_id in range(max(clusters) + 1):
+        #     cluster_indices = np.where(clusters == cluster_id)[0]
+        #     if len(cluster_indices) > 0:
+        #         cluster_features = features[cluster_indices]
+        #         cluster_center = np.mean(cluster_features, axis=0)
+        #         distances = np.linalg.norm(cluster_features - cluster_center, axis=1)
+        #         representative_idx = cluster_indices[np.argmin(distances)]
+        #         compressed_matches.append(sequence_matches[representative_idx])
 
         # Calculate clustering quality
         if len(np.unique(clusters)) > 1:
