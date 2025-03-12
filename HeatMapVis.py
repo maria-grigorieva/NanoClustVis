@@ -10,13 +10,22 @@ import seaborn as sns
 class SequenceVisualizer:
     def __init__(self, query_dict: Dict[str, str], target_clusters: int = 100):
         self.query_dict = query_dict
-        self.colors = ['#FFFFFF', '#FF4444', '#4444FF', '#44FF44',
-                       '#FFFF44', '#FF44FF', '#44FFFF', '#CCCCCC',
-                       '#FFA500', '#8A2BE2']
+        self.colors = ['#FFFFFF',  # Background color (white)
+                       '#FF4444',  # Red
+                       '#4444FF',  # Blue
+                       '#44FF44',  # Green
+                       '#FFFF44',  # Yellow
+                       '#FF44FF',  # Magenta
+                       '#44FFFF',  # Cyan
+                       '#FFA500',  # Orange
+                       '#8A2BE2',  # Purple
+                       '#FF1493',  # Deep Pink
+                       '#20B2AA',  # Light Sea Green
+                       '#DAA520']  # Goldenrod
         self.compressor = IntelligentCompressor(target_clusters)
 
     def calculate_visualization_width(self, sequence_matches: List[List[SequenceMatch]],
-                                      average = False) -> int:
+                                      average=False) -> int:
         """Calculate the mean maximum position of matches plus padding."""
         max_positions = []
         for matches in sequence_matches:
@@ -27,32 +36,39 @@ class SequenceVisualizer:
             return 0
 
         if average:
-            # Calculate mean max position and add 10% padding
             mean_max_pos = int(np.mean(max_positions))
             return int(mean_max_pos * 1.1)  # Add 10% padding
         else:
             return int(np.max(max_positions))
 
-    def create_visualization_matrix(self,
-                                  compressed_matches: List[List[SequenceMatch]]) -> np.ndarray:
+    def create_visualization_matrix(self, compressed_matches: List[List[SequenceMatch]]) -> np.ndarray:
         """Create visualization matrix from compressed matches with length information"""
         vis_width = self.calculate_visualization_width(compressed_matches)
         if vis_width == 0:
             raise ValueError("No matches found in sequences")
 
-        # Create visualization matrix with additional dimension for length information
         vis_matrix = np.zeros((len(compressed_matches), vis_width, 2))
 
-        # Fill visualization matrix
+        # Debug print to check query processing
+        query_counts = {key: 0 for key in self.query_dict.keys()}
+
         for row_idx, matches in enumerate(compressed_matches):
             for match in matches:
                 if match.position < vis_width:
-                    query_idx = list(self.query_dict.keys()).index(match.query_name) + 1
-                    pos_start = match.position
-                    pos_end = min(pos_start + match.length, vis_width)
-                    # Store both query index and length
-                    vis_matrix[row_idx, pos_start:pos_end, 0] = query_idx
-                    vis_matrix[row_idx, pos_start:pos_end, 1] = match.length
+                    try:
+                        query_idx = list(self.query_dict.keys()).index(match.query_name) + 1
+                        query_counts[match.query_name] += 1
+                        pos_start = match.position
+                        pos_end = min(pos_start + match.length, vis_width)
+                        vis_matrix[row_idx, pos_start:pos_end, 0] = query_idx
+                        vis_matrix[row_idx, pos_start:pos_end, 1] = match.length
+                    except ValueError as e:
+                        print(f"Warning: Query name {match.query_name} not found in query_dict")
+
+        # Print query statistics
+        print("\nQuery match statistics:")
+        for query, count in query_counts.items():
+            print(f"Query {query}: {count} matches")
 
         return vis_matrix
 
@@ -63,78 +79,33 @@ class SequenceVisualizer:
         rgb = tuple(int(hex_color[i:i + 2], 16) / 255 for i in (0, 2, 4))
         return rgb + (alpha,)
 
-    def find_overlaps(self, matches: List[SequenceMatch]) -> Dict[tuple, int]:
-        """
-        Find overlapping regions in a sequence and count overlap depth
-        Returns a dictionary with position ranges and overlap count
-        """
-        overlap_map = {}
-
-        # Sort matches by position
-        sorted_matches = sorted(matches, key=lambda x: x.position)
-
-        # Check each position for overlaps
-        for match in sorted_matches:
-            start = match.position
-            end = start + match.length
-
-            # Update overlap count for each position in the match range
-            for pos in range(start, end):
-                overlap_map[pos] = overlap_map.get(pos, 0) + 1
-
-        return overlap_map
-
     def plot_heatmap(self,
                      vis_matrix: np.ndarray,
                      cluster_assignments: np.ndarray,
                      title: str = 'Sequence Match Heatmap') -> plt.Figure:
-        """Plot heatmap with variable-width boxes and overlap transparency"""
+        """Plot heatmap with variable-width boxes"""
         plt.figure(figsize=(22, 12))
         gs = plt.GridSpec(1, 24)
         ax_main = plt.subplot(gs[0, :17])
         ax_main.clear()
 
-        # Set the y-axis limits
         ax_main.set_ylim(0, len(vis_matrix))
-
-        # Calculate x-axis limits
-        max_x = vis_matrix.shape[1]  # Use the width of the matrix
+        max_x = vis_matrix.shape[1]
         ax_main.set_xlim(0, max_x)
 
-        # Plot rectangles for each row
         for row_idx in range(len(vis_matrix)):
-            # Create a map of overlapping regions
-            overlap_map = {}
-
-            # First pass: count overlaps
-            for col_idx in range(max_x):
-                if vis_matrix[row_idx, col_idx, 0] > 0:  # If there's a match
-                    overlap_map[col_idx] = overlap_map.get(col_idx, 0) + 1
-
-            # Second pass: plot rectangles
             col_idx = 0
             while col_idx < max_x:
                 query_idx = int(vis_matrix[row_idx, col_idx, 0])
                 if query_idx > 0:
-                    # Get the length of this match
                     length = int(vis_matrix[row_idx, col_idx, 1])
 
-                    # Calculate overlap for this region
-                    max_overlap = max(overlap_map.get(pos, 1)
-                                      for pos in range(col_idx, min(col_idx + length, max_x)))
-
-                    # Adjust alpha based on overlap count
-                    alpha = min(0.8 / max_overlap, 0.8)
-
-                    # Create color with adjusted alpha
                     base_color = self.colors[query_idx]
                     if isinstance(base_color, str):
-                        # Convert hex to rgba if needed
-                        color = (*self.hex_to_rgba(base_color)[:3], alpha)
+                        color = (*self.hex_to_rgba(base_color)[:3], 0.8)
                     else:
-                        color = (*base_color[:3], alpha)
+                        color = (*base_color[:3], 0.8)
 
-                    # Create rectangle
                     rect = plt.Rectangle(
                         (col_idx, row_idx),
                         length,
@@ -144,25 +115,23 @@ class SequenceVisualizer:
                         linewidth=0.5
                     )
                     ax_main.add_patch(rect)
-
-                    # Add length text if box is wide enough
-                    if length > 20:
-                        ax_main.text(
-                            col_idx + length / 2,
-                            row_idx + 0.5,
-                            str(length),
-                            ha='center',
-                            va='center',
-                            fontsize=8,
-                            color='black',
-                            weight='bold'
-                        )
+                    #
+                    # if length > 20:
+                    #     ax_main.text(
+                    #         col_idx + length / 2,
+                    #         row_idx + 0.5,
+                    #         str(length),
+                    #         ha='center',
+                    #         va='center',
+                    #         fontsize=8,
+                    #         color='black',
+                    #         weight='bold'
+                    #     )
 
                     col_idx += length
                 else:
                     col_idx += 1
 
-        # Rest of the method remains the same...
         # Add grid
         ax_main.grid(True, which='major', color='gray', linestyle='-', alpha=0.2)
         ax_main.set_xticks(np.arange(0, max_x, 50))
@@ -179,23 +148,30 @@ class SequenceVisualizer:
         ax_clusters.set_xlabel('Number of Sequences')
         ax_clusters.set_ylabel('Cluster ID')
 
-        # Add legend for queries with solid colors for better visibility
+        # Add legend
         legend_elements = []
-        for i in range(len(self.query_dict)):
-            color = self.colors[i + 1]
+        query_keys = list(self.query_dict.keys())
+
+        # Debug print to check queries
+        print(f"Total queries: {len(query_keys)}")
+
+        for i, query_key in enumerate(query_keys):
+            color = self.colors[i + 1]  # Skip the first color (background)
             if isinstance(color, str):
-                # Convert hex to RGB
-                rgb = self.hex_to_rgba(color)[:3]  # Get only RGB values
+                rgb = self.hex_to_rgba(color)[:3]
                 legend_elements.append(
                     plt.Rectangle((0, 0), 1, 1, facecolor=(*rgb, 1.0))
                 )
             else:
-                # If color is already in RGB/RGBA format
                 legend_elements.append(
                     plt.Rectangle((0, 0), 1, 1, facecolor=(*color[:3], 1.0))
                 )
+            # Debug print for legend creation
+            print(f"Creating legend for query {i + 1}: {query_key}")
+
+        # Create legend with all query keys
         ax_main.legend(legend_elements,
-                       list(self.query_dict.keys()),
+                       query_keys,
                        bbox_to_anchor=(0.85, 1),
                        loc='upper left')
 
@@ -217,6 +193,7 @@ class SequenceVisualizer:
 
         plt.tight_layout()
         return plt.gcf()
+
 
     def plot_raw_heatmap(self, matches: list, title: str = 'Sequence Match Positions') -> plt.Figure:
         """Plot raw heatmap with variable-width boxes"""
