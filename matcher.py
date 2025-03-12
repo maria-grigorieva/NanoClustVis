@@ -13,7 +13,7 @@ class SequenceMatch:
 
 
 class SequenceAnalyzer:
-    def __init__(self, similarity_threshold: float = 0.75, window_size: int = 50):
+    def __init__(self, similarity_threshold: float = 0.95, window_size: int = 50):
         self.similarity_threshold = similarity_threshold
         self.window_size = window_size
 
@@ -36,6 +36,16 @@ class SequenceAnalyzer:
             if len(positions) > 0:
                 # Find peaks in similarity scores
                 peaks, properties = find_peaks(scores)
+
+                # Manually check if the first value is a peak
+                if len(scores) > 1:
+                    if scores[0] > scores[1]:
+                        peaks = [0]
+                    if scores[len(scores)-1] > scores[len(scores)-2]:
+                        peaks = [len(scores)-1]
+
+                if len(peaks) == 0:
+                    peaks = [idx for idx,pos in enumerate(positions) if scores[idx] > self.similarity_threshold]
 
                 for peak in peaks:
                     matches.append(SequenceMatch(

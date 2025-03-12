@@ -16,40 +16,43 @@ def reverse_complement(seq: str) -> str:
     return seq.translate(complement)[::-1]
 
 def main():
-    fastq_file = Path("data_samples/FBA01901_barcode06.fastq")
+    fastq_file = Path("data_samples/FBA01901_barcodes1_2_3_4.fastq")
     query_dict = {
-        "Left_Primer": "CTTCATGGATCCTGCTCTCG",
-        "Left_Rev_Compl": reverse_complement("CTTCATGGATCCTGCTCTCG"),
-        "Right_Primer": "GGCCCTAAAGCTTAGCACGA",
-        "Right_Rev_Compl": reverse_complement("GGCCCTAAAGCTTAGCACGA"),
-        "Barcode_6": "GACTACTTTCTGCCTTTGCGAGAA",
-        "Barcode_6_rev": "TTCTCGCAAAGGCAGAAAGTAGTC"
+        "Aptamer_1": "CGAGAGC",
+        "Aptamer_2": "GGGCCAGCA",
+        "Left": "CTTCATGGATCCTGCTCTCG",
+        "RCLeft": reverse_complement("CTTCATGGATCCTGCTCTCG"),
+        "Right": "GGCCCTAAAGCTTAGCACGA",
+        "RCRight": reverse_complement("GGCCCTAAAGCTTAGCACGA"),
+        "Barcode 6": "CCGTGGTTACAGTCAGAGGAG",
+        "Barcode_6_rev": "AAGCGTTGAAACCTTTGTCCTCTC"
     }
 
     # Process FASTQ file
     processor = FastqProcessor(fastq_file, query_dict)
     sequence_matches = processor.process_file()
 
-    visualizer = SequenceVisualizer(query_dict)
-    fig = visualizer.plot_raw_heatmap(sequence_matches)
-    fig.savefig(f'heatmap_raw.png',
-                bbox_inches='tight',
-                dpi=300)
-    plt.close()
+    # visualize RAW fastq file
+    # visualizer = SequenceVisualizer(query_dict)
+    # fig = visualizer.plot_raw_heatmap(sequence_matches)
+    # fig.savefig(f'heatmap_raw.png',
+    #             bbox_inches='tight',
+    #             dpi=300)
+    # plt.close()
 
 
     # Try different clustering methods
     clustering_methods = {
         'hierarchical': HierarchicalClustering(),
-        'kmeans': KMeansClustering(),
+        # 'kmeans': KMeansClustering(),
         'dbscan': DBSCANClustering(),
         'hdbscan': HDBSCANClustering(),
-        'birch': BIRCHClustering(),
+        # 'birch': BIRCHClustering(),
         'optics': OPTICSClustering(),
-        'GMM': GMMClustering(),
-        'meanshift': MeanShiftClustering(),
-        'affinity': AffinityPropagationClustering(),
-        'spectral': SpectralClusteringMethod()
+        # 'GMM': GMMClustering(),
+        # 'meanshift': MeanShiftClustering(),
+        # 'affinity': AffinityPropagationClustering(),
+        # 'spectral': SpectralClusteringMethod()
     }
 
     embedding_methods = {

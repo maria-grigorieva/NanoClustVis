@@ -284,6 +284,8 @@ class IntelligentCompressor:
                                sequence_matches: List[List[SequenceMatch]],
                                max_width: int) -> np.ndarray:
         """Create traditional feature vectors based on match statistics"""
+        # Each sequence is represented by a set of features derived from matches to different queries.
+
         n_sequences = len(sequence_matches)
         n_queries = len(set(match.query_name for matches in sequence_matches
                             for match in matches))
@@ -313,7 +315,8 @@ class IntelligentCompressor:
 
     def compress_sequences(self,
                            sequence_matches: List[List[SequenceMatch]],
-                           max_width: int) -> Tuple[List[List[SequenceMatch]], np.ndarray]:
+                           max_width: int,
+                           combined: bool = False) -> Tuple[List[List[SequenceMatch]], np.ndarray]:
         """Compress sequences using selected embedding and clustering methods"""
         if len(sequence_matches) <= self.target_clusters:
             return sequence_matches, np.arange(len(sequence_matches))
@@ -328,15 +331,17 @@ class IntelligentCompressor:
             self.scaler.fit_transform(embedded_features)
         ])
 
+        features = combined_features if combined else embedded_features
+
         # Perform clustering
-        clusters = self.clustering_method.fit_predict(combined_features, self.target_clusters)
+        clusters = self.clustering_method.fit_predict(features, self.target_clusters)
 
         # Select representative sequences
         compressed_matches = []
         for cluster_id in range(max(clusters) + 1):
             cluster_indices = np.where(clusters == cluster_id)[0]
             if len(cluster_indices) > 0:
-                cluster_features = combined_features[cluster_indices]
+                cluster_features = features[cluster_indices]
                 cluster_center = np.mean(cluster_features, axis=0)
                 distances = np.linalg.norm(cluster_features - cluster_center, axis=1)
                 representative_idx = cluster_indices[np.argmin(distances)]
@@ -344,7 +349,7 @@ class IntelligentCompressor:
 
         # Calculate clustering quality
         if len(np.unique(clusters)) > 1:
-            silhouette_avg = silhouette_score(combined_features, clusters)
+            silhouette_avg = silhouette_score(features, clusters)
             print(f"Clustering quality (silhouette score): {silhouette_avg:.3f}")
 
         return compressed_matches, clusters

@@ -21,5 +21,7 @@ class FastqProcessor:
             matches = self.sequence_analyzer.find_matches_in_sequence(sequence, self.query_dict)
             if matches:  # Only append if matches were found
                 all_sequence_matches.append(matches)
+            else:
+                all_sequence_matches.append([])
 
         return all_sequence_matches
