@@ -3,12 +3,14 @@ from typing import List, Tuple, Dict, Optional
 import numpy as np
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 import hdbscan
+from fastcluster import linkage
 from sklearn.cluster import Birch, OPTICS, MeanShift, AffinityPropagation, SpectralClustering
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import silhouette_score, pairwise_distances
 from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import pdist
 from gensim.models import Word2Vec
 import torch
 # from transformers import BertTokenizer, BertModel
@@ -16,6 +18,11 @@ import warnings
 from matcher import SequenceMatch
 from collections import defaultdict
 from sklearn.metrics import pairwise_distances
+from joblib import Parallel, delayed
+from tqdm import tqdm
+from sklearn.cluster import MiniBatchKMeans
+from scipy.spatial import cKDTree
+from Embeddings import SequenceEmbedding, Word2VecEmbedding
 
 warnings.filterwarnings('ignore')
 
@@ -43,9 +50,33 @@ class KMeansClustering(ClusteringMethod):
 
 
 class HierarchicalClustering(ClusteringMethod):
+
+    def reduce_samples(self, features: np.ndarray, n_representative: int = 5000) -> np.ndarray:
+        """Reduce the number of samples by selecting representative points using MiniBatchKMeans."""
+        if len(features) > n_representative:
+            kmeans = MiniBatchKMeans(n_clusters=n_representative, random_state=42, batch_size=1024)
+            kmeans.fit(features)
+            return kmeans.cluster_centers_  # Use cluster centers as representative points
+        return features
+
     def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
+
         linkage_matrix = linkage(features, method='ward')
         return fcluster(linkage_matrix, t=n_clusters, criterion='maxclust') - 1
+
+        # features_reduced = self.reduce_samples(features)
+        # tqdm.write("Features reduced")
+        # # Compute condensed distance matrix instead of full square matrix
+        # distance_matrix = pdist(features_reduced, metric='euclidean')
+        # tqdm.write("Distance matrix computed")
+        #
+        # # Use fastcluster's optimized linkage
+        # with tqdm(total=len(features_reduced), desc="Computing Linkage") as pbar:
+        #     linkage_matrix = linkage(distance_matrix, method='ward')
+        #     pbar.update(len(features_reduced))
+        # tqdm.write("Linkage computation done")
+        #
+        # return fcluster(linkage_matrix, t=n_clusters, criterion='maxclust') - 1
 
     def get_name(self) -> str:
         return "Hierarchical"
@@ -99,11 +130,12 @@ class BIRCHClustering(ClusteringMethod):
 class OPTICSClustering(ClusteringMethod):
     def fit_predict(self, features: np.ndarray, n_clusters: int) -> np.ndarray:
         min_samples = self._estimate_min_samples(features)
-        return OPTICS(min_samples=min_samples).fit_predict(features)
+        model = OPTICS(min_samples=min_samples, n_jobs=-1)  # Parallel execution
+        return model.fit_predict(features)
 
     def _estimate_min_samples(self, features: np.ndarray) -> int:
         """Estimate min_samples parameter for OPTICS"""
-        nn = NearestNeighbors(n_neighbors=2)
+        nn = NearestNeighbors(n_neighbors=2, n_jobs=-1)
         nn_dist = nn.fit(features).kneighbors(features)[0]
         return max(2, int(np.percentile(nn_dist[:, 1], 90)))  # At least 2
 
@@ -167,109 +199,6 @@ class SpectralClusteringMethod(ClusteringMethod):
 
     def get_name(self) -> str:
         return "SpectralClustering"
-
-class SequenceEmbedding(ABC):
-    """Abstract base class for sequence embedding methods"""
-
-    @abstractmethod
-    def embed_sequences(self, sequences: List[List[SequenceMatch]]) -> np.ndarray:
-        """Convert sequences to embeddings"""
-        pass
-
-    @abstractmethod
-    def get_name(self) -> str:
-        """Return the name of the embedding method"""
-        pass
-
-
-class Word2VecEmbedding(SequenceEmbedding):
-    def __init__(self, vector_size: int = 5):
-        self.vector_size = vector_size
-
-    def embed_sequences(self, sequences: List[List[SequenceMatch]]) -> np.ndarray:
-        # Convert sequences to "words" (query names in order of appearance)
-        sequence_words = [
-            [match.query_name for match in seq_matches]
-            for seq_matches in sequences
-        ]
-
-        # Train Word2Vec model
-        model = Word2Vec(sentences=sequence_words,
-                         vector_size=self.vector_size,
-                         window=5,
-                         min_count=1,
-                         workers=4)
-
-        # Create sequence embeddings by averaging word vectors
-        embeddings = np.zeros((len(sequences), self.vector_size))
-        for i, seq_words in enumerate(sequence_words):
-            if seq_words:
-                embeddings[i] = np.mean([model.wv[word] for word in seq_words], axis=0)
-
-        return embeddings
-
-    def get_name(self) -> str:
-        return "Word2Vec"
-
-class Bio2VecEmbedding(SequenceEmbedding):
-    """Embedding using Bio2Vec approach"""
-    def __init__(self,
-                 vector_size: int = 100,
-                 window: int = 5,
-                 k_mer_size: int = 3):
-        self.vector_size = vector_size
-        self.window = window
-        self.k_mer_size = k_mer_size
-        self.model = None
-
-    def _sequence_to_kmers(self, sequence: str) -> List[str]:
-        """Convert sequence to k-mers"""
-        return [sequence[i:i+self.k_mer_size]
-                for i in range(len(sequence)-self.k_mer_size+1)]
-
-    def _extract_sequence(self, match: SequenceMatch) -> str:
-        """Extract sequence from match"""
-        # This is a placeholder - you'll need to implement actual sequence extraction
-        # based on your data structure
-        return match.sequence if hasattr(match, 'sequence') else ''
-
-    def _train_bio2vec(self, sequences: List[List[str]]) -> Word2Vec:
-        """Train Bio2Vec model on sequences"""
-        return Word2Vec(sequences,
-                       vector_size=self.vector_size,
-                       window=self.window,
-                       min_count=1,
-                       workers=4)
-
-    def embed_sequences(self, sequences: List[List[SequenceMatch]]) -> np.ndarray:
-        """Convert sequences to Bio2Vec embeddings"""
-        # Convert sequences to k-mers
-        kmer_sequences = []
-        for seq_matches in sequences:
-            seq_kmers = []
-            for match in seq_matches:
-                sequence = self._extract_sequence(match)
-                if sequence:
-                    seq_kmers.extend(self._sequence_to_kmers(sequence))
-            kmer_sequences.append(seq_kmers)
-
-        # Train Bio2Vec model if not already trained
-        if self.model is None:
-            self.model = self._train_bio2vec(kmer_sequences)
-
-        # Create embeddings
-        embeddings = np.zeros((len(sequences), self.vector_size))
-        for i, kmers in enumerate(kmer_sequences):
-            if kmers:
-                kmer_vectors = [self.model.wv[kmer] for kmer in kmers if kmer in self.model.wv]
-                if kmer_vectors:
-                    embeddings[i] = np.mean(kmer_vectors, axis=0)
-
-        return embeddings
-
-    def get_name(self) -> str:
-        return f"Bio2Vec_k{self.k_mer_size}"
-
 
 
 class IntelligentCompressor:
@@ -375,28 +304,43 @@ class IntelligentCompressor:
 
     def compress_sequences(self,
                            sequence_matches: List[List[SequenceMatch]],
+                           features: np.ndarray,
                            max_width: int,
-                           combined: bool = False) -> Tuple[List[List[SequenceMatch]], np.ndarray]:
+                           combined: bool = False,
+                           save_results: bool = False,
+                           output_file: str = "clustering_results.csv") -> Tuple[List[List[SequenceMatch]], np.ndarray]:
         """Compress sequences using selected embedding and clustering methods"""
         if len(sequence_matches) <= self.target_clusters:
             return sequence_matches, np.arange(len(sequence_matches))
 
         # Get both traditional features and embeddings
-        traditional_features = self.create_feature_vectors(sequence_matches, max_width)
-        embedded_features = self.embedding_method.embed_sequences(sequence_matches)
-
-        # Combine features
-        combined_features = np.hstack([
-            self.scaler.fit_transform(traditional_features),
-            self.scaler.fit_transform(embedded_features)
-        ])
-
-        features = combined_features if combined else embedded_features
+        # traditional_features = self.create_feature_vectors(sequence_matches, max_width)
+        # embedded_features = self.embedding_method.embed_sequences(sequence_matches)
+        #
+        # # Combine features
+        # combined_features = np.hstack([
+        #     # self.scaler.fit_transform(traditional_features),
+        #     self.scaler.fit_transform(embedded_features)
+        # ])
+        #
+        # features = combined_features if combined else embedded_features
 
         # Perform clustering
         clusters = self.clustering_method.fit_predict(features, self.target_clusters)
 
-        # Select representative sequences
+        # Save clustering results to CSV file if save_results is True
+        if save_results:
+            import pandas as pd
+            results = []
+            for i, match in enumerate(sequence_matches):
+                results.append({
+                    "Sequence": str(match),
+                    "Cluster": clusters[i]
+                })
+            df = pd.DataFrame(results)
+            df.to_csv(output_file, index=False)
+            print(f"Clustering results saved to {output_file}")
+
         # Select representative sequences with diversity check
         compressed_matches = []
         diversity_threshold = 0.3  # Adjust this threshold based on your needs
@@ -432,15 +376,6 @@ class IntelligentCompressor:
 
                     print(f"Cluster {cluster_id}: Diversity = {diversity_score:.3f}, "
                           f"Selected 1 representative from {len(cluster_indices)} sequences")
-        # compressed_matches = []
-        # for cluster_id in range(max(clusters) + 1):
-        #     cluster_indices = np.where(clusters == cluster_id)[0]
-        #     if len(cluster_indices) > 0:
-        #         cluster_features = features[cluster_indices]
-        #         cluster_center = np.mean(cluster_features, axis=0)
-        #         distances = np.linalg.norm(cluster_features - cluster_center, axis=1)
-        #         representative_idx = cluster_indices[np.argmin(distances)]
-        #         compressed_matches.append(sequence_matches[representative_idx])
 
         # Calculate clustering quality
         if len(np.unique(clusters)) > 1:

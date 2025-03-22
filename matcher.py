@@ -16,7 +16,7 @@ class SequenceMatch:
 
 
 class SequenceAnalyzer:
-    def __init__(self, similarity_threshold: float = 0.95, window_size: int = 50):
+    def __init__(self, similarity_threshold: float = 0.85, window_size: int = 50):
         self.similarity_threshold = similarity_threshold
         self.window_size = window_size
 

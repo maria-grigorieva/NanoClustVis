@@ -10,7 +10,7 @@ import seaborn as sns
 class SequenceVisualizer:
     def __init__(self, query_dict: Dict[str, str], target_clusters: int = 100):
         self.query_dict = query_dict
-        self.colors = ['#FFFFFF',  # Background color (white)
+        self.colors = ['#FFFFFF',  # White (Background)
                        '#FF4444',  # Red
                        '#4444FF',  # Blue
                        '#44FF44',  # Green
@@ -21,7 +21,33 @@ class SequenceVisualizer:
                        '#8A2BE2',  # Purple
                        '#FF1493',  # Deep Pink
                        '#20B2AA',  # Light Sea Green
-                       '#DAA520']  # Goldenrod
+                       '#DAA520',  # Goldenrod
+                       '#000000',  # Black (Max Contrast)
+                       '#A52A2A',  # Brown
+                       '#00CED1',  # Dark Turquoise
+                       '#9400D3',  # Dark Violet
+                       '#008000',  # Dark Green
+                       '#FF4500',  # Orange Red
+                       '#1E90FF',  # Dodger Blue
+                       '#FFD700',  # Gold
+                       '#C71585',  # Medium Violet Red
+                       '#4682B4',  # Steel Blue
+                       '#808000',  # Olive
+                       '#DC143C',  # Crimson
+                       '#00FF7F',  # Spring Green
+                       '#B22222',  # Firebrick
+                       '#5F9EA0',  # Cadet Blue
+                       '#9932CC',  # Dark Orchid
+                       '#FF6347',  # Tomato
+                       '#40E0D0',  # Turquoise
+                       '#32CD32',  # Lime Green
+                       '#BDB76B',  # Dark Khaki
+                       '#FF69B4',  # Hot Pink
+                       '#191970',  # Midnight Blue
+                       '#ADFF2F',  # Green Yellow
+                       '#7B68EE',  # Medium Slate Blue
+                       '#D2691E',  # Chocolate
+                       '#8B0000']  # Dark Red
         self.compressor = IntelligentCompressor(target_clusters)
 
     def calculate_visualization_width(self, sequence_matches: List[List[SequenceMatch]],
@@ -43,7 +69,7 @@ class SequenceVisualizer:
 
     def create_visualization_matrix(self, compressed_matches: List[List[SequenceMatch]]) -> np.ndarray:
         """Create visualization matrix from compressed matches with length information"""
-        vis_width = self.calculate_visualization_width(compressed_matches)
+        vis_width = self.calculate_visualization_width(compressed_matches, True)
         if vis_width == 0:
             raise ValueError("No matches found in sequences")
 
@@ -92,6 +118,10 @@ class SequenceVisualizer:
         ax_main.set_ylim(0, len(vis_matrix))
         max_x = vis_matrix.shape[1]
         ax_main.set_xlim(0, max_x)
+
+        min_cluster = np.min(cluster_assignments)
+        max_cluster = np.max(cluster_assignments)
+        ax_main.set_ylim(min_cluster - 0.5, max_cluster + 0.5)
 
         for row_idx in range(len(vis_matrix)):
             col_idx = 0
@@ -142,7 +172,7 @@ class SequenceVisualizer:
         cluster_sizes = [np.sum(cluster_assignments == c) for c in unique_clusters]
 
         # Plot cluster sizes
-        cluster_positions = range(len(cluster_sizes))
+        cluster_positions = np.arange(len(unique_clusters)) + np.min(unique_clusters)
         ax_clusters.barh(cluster_positions, cluster_sizes)
         ax_clusters.set_title('Sequences per Cluster')
         ax_clusters.set_xlabel('Number of Sequences')
@@ -190,6 +220,11 @@ class SequenceVisualizer:
         plt.figtext(0.94, 0.15, stats_text,
                     bbox=dict(facecolor='white', alpha=0.8),
                     verticalalignment='center')
+
+        # Align cluster information with visualization matrix
+        ax_clusters.set_ylim(min_cluster - 0.5, max_cluster + 0.5)
+        ax_clusters.set_yticks(range(min_cluster, max_cluster + 1))
+        ax_clusters.set_yticklabels(range(min_cluster, max_cluster + 1))
 
         plt.tight_layout()
         return plt.gcf()
