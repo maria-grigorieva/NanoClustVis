@@ -12,7 +12,12 @@ from typing import List
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
-from Embeddings import Word2VecEmbedding
+from Embeddings import (Word2VecEmbedding,
+                        WeightedWord2VecEmbedding,
+                        PositionalEncodingWord2VecEmbedding,
+                        Bio2VecEmbedding,
+                        LSTMEmbedding,
+                        TransformerSequenceEmbedding)
 
 
 def reverse_complement(seq: str) -> str:
@@ -31,9 +36,43 @@ def record_reverse_complement(record: SeqRecord) -> SeqRecord:
         letter_annotations=record.letter_annotations
     )
 
-
 def main():
-    fastq_file = Path("data_samples/bigfile.fastq")
+    fastq_file = Path("data_samples/new_sequencing_may2025/reads/barcode06.fastq")
+
+    # query_dict = {
+    #     # "Left": "CTTCATGGATCCNGCTCTCG",
+    #     # "RCLeft": "CGAGAGCAGGATCCATGAAG",
+    #     # "Right": "GGCCCNAAAGCTTAGCACGA",
+    #     # "RCRight": "TCGTGCTAAGCTTTAGGGCC",
+    #     "Aptamer/1": "GGCCTAAAGCTTAGCACGA",
+    #     "Aptamer/1/RC": reverse_complement("GGCCTAAAGCTTAGCACGA"),
+    #     "Aptamer/2": "TCTTCATGGATCCATGAA",
+    #     "Aptamer/2/RC": reverse_complement("TCTTCATGGATCCATGAA")
+    #     #"RCLeft-Left": "CGAGAGCNGGATCCNGCTCTCG",
+    #     #"Right-RCRight": "GGCCCNAAAGCTTTAGGGCC",
+    #     #"Barcode 6": "TCCATTCCCTCCGATAGATGAAAC",
+    #     #"Barcode 6 RC": "GTTTCATCTATCGGAGGGAATGGA"
+    # }
+    query_dict = {
+        "RCRight/r": "CTTTAGGGCC",
+        "RCRight/l": "TCGTGCTAAG",
+        "RCLeft/l": "CGAGAGCAG",
+        "RCLeft/r": "ATCCATGAAG",
+        "Left/l": "CTTCATGGAT",
+        "Left/r": "CCTGCTCTCG",
+        "Right/l": "GGCCCTAAAG",
+        "Right/r": "CTTAGCACGA",
+    }
+    # query_dict = {
+    #     "Left": "CTTCATGGATCCNGCTCTCG",
+    #     #"RCLeft": "CGAGAGCAGGATCCATGAAG",
+    #     #"Right": "GGCCCNAAAGCTTAGCACGA",
+    #     "RCRight": "TCGTGCTAAGCTTTAGGGCC",
+    #     #"RCLeft-Left": "CGAGAGCNGGATCCNGCTCTCG",
+    #     #"Right-RCRight": "GGCCCNAAAGCTTTAGGGCC",
+    #     #"Barcode 6": "TCCATTCCCTCCGATAGATGAAAC",
+    #     #"Barcode 6 RC": "GTTTCATCTATCGGAGGGAATGGA"
+    # }
     # query_dict = {
     #     "Left": "ACCTAGAGGTAAGGCAGGGG",
     #     "LeftRC": reverse_complement("ACCTAGAGGTAAGGCAGGGG"),
@@ -42,34 +81,34 @@ def main():
     #     "Barcode": "AAGGTTACACAAACCCTGGACAAG",
     #     "BarcodeRC": "CTTGTCCAGGGTTTGTGTAACCTT"
     # }
-    query_dict = {
-        "Left": "CTCCTCTGACTGTAACCACG",
-        "Left/RC": reverse_complement("CTCCTCTGACTGTAACCACG"),
-        "Right": "GGCTTCTGGACTACCTATGC",
-        "Right/RC": reverse_complement("GGCTTCTGGACTACCTATGC"),
-        # "Barcode 01": "AAGGTTAACACAAAGACACCGACAACTTTCTTCAGCACCT",
-        # "Barcode 01/RC": reverse_complement("AAGGTTAACACAAAGACACCGACAACTTTCTTCAGCACCT"),
-        # "Barcode 03": "AAGGTTAACCTGGTAACTGGGACACAAGACTCAGCACCT",
-        # "Barcode 03/RC": reverse_complement("AAGGTTAACCTGGTAACTGGGACACAAGACTCAGCACCT"),
-        # "Barcode 05": "AAGGTTAAAAGGTTACACAAACCCTGGACAAGCAGCACCT",
-        # "Barcode 05/RC": reverse_complement("AAGGTTAAAAGGTTACACAAACCCTGGACAAGCAGCACCT"),
-        # "Barcode 08": "ACGTAACTTGGTTTGTTCCCTGAA",
-        # "Barcode 08/RC": reverse_complement("ACGTAACTTGGTTTGTTCCCTGAA"),
-        # "Barcode 10": "GAGAGGACAAAGGTTTCAACGCTT",
-        # "Barcode 10/RC": reverse_complement("GAGAGGACAAAGGTTTCAACGCTT"),
-        # "Barcode 11": "TCCATTCCCTCCGATAGATGAAAC",
-        # "Barcode 11/RC": reverse_complement("TCCATTCCCTCCGATAGATGAAAC"),
-        # "Barcode 12": "TCCGATTCTGCTTCTTTCTACCTG",
-        # "Barcode 12/RC": reverse_complement("TCCGATTCTGCTTCTTTCTACCTG"),
-        # "Barcode 13": "AGAACGACTTCCATACTCGTGTGA",
-        # "Barcode 13/RC": reverse_complement("AGAACGACTTCCATACTCGTGTGA"),
-        # "Barcode 14": "AACGAGTCTCTTGGGACCCATAGA",
-        # "Barcode 14/RC": reverse_complement("AACGAGTCTCTTGGGACCCATAGA"),
-        # "Barcode 15": "AGGTCTACCTCGCTAACACCACTG",
-        # "Barcode 15/RC": reverse_complement("AGGTCTACCTCGCTAACACCACTG"),
-        # "Barcode 16": "CGTCAACTGACAGTGGTTCGTACT",
-        # "Barcode 16/RC": reverse_complement("CGTCAACTGACAGTGGTTCGTACT")
-    }
+    # query_dict = {
+    #     "Left": "CTCCTCTGACTGTAACCACG",
+    #     "Left/RC": reverse_complement("CTCCTCTGACTGTAACCACG"),
+    #     "Right": "GGCTTCTGGACTACCTATGC",
+    #     "Right/RC": reverse_complement("GGCTTCTGGACTACCTATGC"),
+    #     # "Barcode 01": "AAGGTTAACACAAAGACACCGACAACTTTCTTCAGCACCT",
+    #     # "Barcode 01/RC": reverse_complement("AAGGTTAACACAAAGACACCGACAACTTTCTTCAGCACCT"),
+    #     # "Barcode 03": "AAGGTTAACCTGGTAACTGGGACACAAGACTCAGCACCT",
+    #     # "Barcode 03/RC": reverse_complement("AAGGTTAACCTGGTAACTGGGACACAAGACTCAGCACCT"),
+    #     # "Barcode 05": "AAGGTTAAAAGGTTACACAAACCCTGGACAAGCAGCACCT",
+    #     # "Barcode 05/RC": reverse_complement("AAGGTTAAAAGGTTACACAAACCCTGGACAAGCAGCACCT"),
+    #     # "Barcode 08": "ACGTAACTTGGTTTGTTCCCTGAA",
+    #     # "Barcode 08/RC": reverse_complement("ACGTAACTTGGTTTGTTCCCTGAA"),
+    #     # "Barcode 10": "GAGAGGACAAAGGTTTCAACGCTT",
+    #     # "Barcode 10/RC": reverse_complement("GAGAGGACAAAGGTTTCAACGCTT"),
+    #     # "Barcode 11": "TCCATTCCCTCCGATAGATGAAAC",
+    #     # "Barcode 11/RC": reverse_complement("TCCATTCCCTCCGATAGATGAAAC"),
+    #     # "Barcode 12": "TCCGATTCTGCTTCTTTCTACCTG",
+    #     # "Barcode 12/RC": reverse_complement("TCCGATTCTGCTTCTTTCTACCTG"),
+    #     # "Barcode 13": "AGAACGACTTCCATACTCGTGTGA",
+    #     # "Barcode 13/RC": reverse_complement("AGAACGACTTCCATACTCGTGTGA"),
+    #     # "Barcode 14": "AACGAGTCTCTTGGGACCCATAGA",
+    #     # "Barcode 14/RC": reverse_complement("AACGAGTCTCTTGGGACCCATAGA"),
+    #     # "Barcode 15": "AGGTCTACCTCGCTAACACCACTG",
+    #     # "Barcode 15/RC": reverse_complement("AGGTCTACCTCGCTAACACCACTG"),
+    #     # "Barcode 16": "CGTCAACTGACAGTGGTTCGTACT",
+    #     # "Barcode 16/RC": reverse_complement("CGTCAACTGACAGTGGTTCGTACT")
+    # }
     # query_dict = {
     #     "Left": "CTCCTCTGACTGTAACCACG",
     #     "RCLeft": reverse_complement("CTCCTCTGACTGTAACCACG"),
@@ -93,10 +132,10 @@ def main():
     #     "Motif": "GTGCGTGTTGGGGTGTGTATGTTTTGCGTG"
     # }
     # query_dict = {
-    #     "Aptamer/1": "TGC**CGAGAGC",
-    #     "Aptamer/2": "GGGCC*GCA",
-    #     "Aptamer/1/RC": reverse_complement("TGC**CGAGAGC"),
-    #     "Aptamer/2/RC": reverse_complement("GGGCC*GCA"),
+    #     # "Aptamer/1": "TGC**CGAGAGC",
+    #     # "Aptamer/2": "GGGCC*GCA",
+    #     # "Aptamer/1/RC": reverse_complement("TGC**CGAGAGC"),
+    #     # "Aptamer/2/RC": reverse_complement("GGGCC*GCA"),
     #     "Left": "CTTCATGGATCCTGCTCTCG",
     #     "RCLeft": reverse_complement("CTTCATGGATCCTGCTCTCG"),
     #     "Right": "GGCCCTAAAGCTTAGCACGA",
@@ -106,10 +145,15 @@ def main():
     # }
 
     # Process FASTQ file
-    processor = FastqProcessor(fastq_file, query_dict)
+    processor = FastqProcessor(fastq_file, query_dict, 1.0)
     sequence_matches = processor.process_file()
 
+    print(processor.lengths_stats)
+
     print(processor.matches_stats(sequence_matches))
+
+    #filtered_sequence_matches = processor.filter_by_distance(sequence_matches, threshold=0)
+    #processed_sequence_matches = processor.remove_empty_records(filtered_sequence_matches)
 
     # visualize RAW fastq file
     # visualizer = SequenceVisualizer(query_dict)
@@ -123,33 +167,42 @@ def main():
     # Try different clustering methods
     clustering_methods = {
         'hierarchical': HierarchicalClustering(),
-        # 'kmeans': KMeansClustering(),
-        # 'dbscan': DBSCANClustering(),
-        'hdbscan': HDBSCANClustering(),
-        # 'birch': BIRCHClustering(),
-        'optics': OPTICSClustering(),
-        # 'GMM': GMMClustering(),
-        # 'meanshift': MeanShiftClustering(),
-        # 'affinity': AffinityPropagationClustering(),
-        # 'spectral': SpectralClusteringMethod()
+        #'kmeans': KMeansClustering(),
+        #'dbscan': DBSCANClustering(),
+        #'hdbscan': HDBSCANClustering(),
+        #'birch': BIRCHClustering(),
+        #'optics': OPTICSClustering(),
+        #'GMM': GMMClustering(),
+        #'meanshift': MeanShiftClustering(),
+        #'affinity': AffinityPropagationClustering(),
+        #'spectral': SpectralClusteringMethod()
     }
 
     embedding_methods = {
-        'word2vec': Word2VecEmbedding(),
+        #'PositionalEncodingWord2Vec': PositionalEncodingWord2VecEmbedding(),
+        #'WeightedWord2VecEmbedding': WeightedWord2VecEmbedding(),
+        #'LSTMEmbedding': LSTMEmbedding(),
+        #'Transformer': TransformerSequenceEmbedding(),
+        'Bio2VecEmbedding': Bio2VecEmbedding(),
+        # 'LSTMAutoencoder': LSTMAutoencoderEmbedding()
+        #'word2vec': Word2VecEmbedding(),
+        # 'bio2vec': BioSeqEmbedding(),
         # 'bert': BERTEmbedding()
     }
 
-    embed = Word2VecEmbedding()
-    features = embed.embed_sequences(sequence_matches)
-    if len(features) >= 10000:
-        features, indices = embed.reduce_samples(features)
-        sequence_matches = [sequence_matches[i] for i in indices]
+    # embed = WeightedWord2VecEmbedding()
+    # features = embed.embed_sequences(processed_sequence_matches)
+    # if len(features) >= 10000:
+    #     features, indices = embed.reduce_samples(features)
+    #     sequence_matches = [sequence_matches[i] for i in indices]
 
     results = {}
 
     for clustering_name, clustering_method in clustering_methods.items():
         for embedding_name, embedding_method in embedding_methods.items():
             print(f"\nTesting {clustering_name} clustering with {embedding_name} embeddings:")
+
+            features = embedding_method.embed_sequences(processor.sequences if 'Bio' in embedding_name else sequence_matches)
 
             compressor = IntelligentCompressor(
                 target_clusters=100,
@@ -167,7 +220,7 @@ def main():
                                   for match in matches),
                     combined=False,
                     save_results=True,
-                    output_file=f'{clustering_name}_results.csv'
+                    output_file=f'{clustering_name}_{embedding_name}_results.csv'
                 )
 
                 # Create visualization

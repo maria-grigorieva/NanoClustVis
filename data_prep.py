@@ -5,7 +5,7 @@ from reader import FastqProcessor, SequenceMatch
 from HeatMapVis import SequenceVisualizer
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
+from typing import List, Tuple, Dict
 from Bio import SeqIO
 # from sklearn.metrics import silhouette_score
 from Bio.SeqRecord import SeqRecord
@@ -103,9 +103,9 @@ def filter_sequences(sequence_matches: List[List[SequenceMatch]],
             # Step 3: Filter sequences
             for i in range(len(matches) - 1):
                 # left - right
-                if ((matches[i].query_name == 'Left' and matches[i + 1].query_name == 'RCRight')):
-                       # or
-                        # (matches[i].query_name == 'RCRight' and matches[i + 1].query_name == 'RCLeft')):
+                if ((matches[i].query_name == 'RCRight' and matches[i + 1].query_name == 'RCLeft')
+                       or
+                        (matches[i].query_name == 'Left' and matches[i + 1].query_name == 'Right')):
                     #     or
                     # (matches[i].query_name == 'Right' and matches[i + 1].query_name == 'RCLeft')):
                 # if (matches[i].query_name == 'Left' or
@@ -122,6 +122,67 @@ def filter_sequences(sequence_matches: List[List[SequenceMatch]],
 
     return filtered_sequences
 
+def remove_duplicates(dict_list):
+    seen = set()
+    unique_dicts = []
+    for d in dict_list:
+        # Convert dict to a hashable form (tuple of sorted key-value pairs)
+        dict_tuple = tuple(sorted(d.items()))
+        if dict_tuple not in seen:
+            seen.add(dict_tuple)
+            unique_dicts.append(d)
+    return unique_dicts
+
+def filter_by_neighbour_distances(sequence_matches: List[List[SequenceMatch]],
+                     rules: List[Dict],
+                     min_distance_threshold: int,
+                     max_distance_threshold: int,
+                     include=False) -> List[
+    List[SequenceMatch]]:
+
+    filtered_sequences = []
+
+    for idx, matches in enumerate(sequence_matches):
+        if len(matches) > 2:
+            matches.sort(key=lambda match: match.position)
+            # print(len(matches))
+            # print(matches)
+            for rule in rules:
+                start = rule['start']
+                end = rule['end']
+                orientation = rule['orientation']
+                for i in range(len(matches) - 1):
+                    if (matches[i].query_name == start and matches[i+1].query_name == end):
+                        distance = matches[i+1].position - (matches[i].position + matches[i].length)
+                        if (distance >= min_distance_threshold and distance <= max_distance_threshold):
+                            filtered_sequences.append({'id': matches[i].seq_id,
+                                                       'start_pos': matches[i].position + matches[i].length if not include else matches[i].position,
+                                                       'end_pos': matches[i + 1].position if not include else matches[i + 1].position + matches[i+1].length,
+                                                       'orientation': orientation})
+
+    return remove_duplicates(filtered_sequences)
+
+def filter_by_distance_from_primer(sequence_matches: List[List[SequenceMatch]],
+                     rules: List[Dict]) -> List[List[SequenceMatch]]:
+
+    filtered_sequences = []
+
+    for idx, matches in enumerate(sequence_matches):
+        if len(matches) > 2:
+            matches.sort(key=lambda match: match.position)
+            for rule in rules:
+                primer = rule['primer']
+                dist_min = rule['distance_min']
+                dist_max = rule['distance_max']
+                orientation = rule['orientation']
+                for match in matches:
+                    if (match.query_name == primer):
+                        filtered_sequences.append({'id': match.seq_id,
+                                                   'start_pos': match.position + match.length,
+                                                   'end_pos': match.position + match.length + dist_max,
+                                                   'orientation': orientation})
+    return remove_duplicates(filtered_sequences)
+
 def trim_sequences(input_fastq: str, output_fastq: str, filtered: list):
 
     selected_records = []
@@ -134,18 +195,25 @@ def trim_sequences(input_fastq: str, output_fastq: str, filtered: list):
         for rec in filtered:
             if rec['id'] == index:  # Match sequence index
                 trimmed_seq = record.seq[rec['start_pos']:rec['end_pos']]
-                trimmed_qual = record.letter_annotations["phred_quality"][rec['start_pos']:rec['end_pos']]
+                if len(str(trimmed_seq)) >= rec['end_pos'] - rec['start_pos']:
+                    trimmed_qual = record.letter_annotations["phred_quality"][rec['start_pos']:rec['end_pos']]
 
-                # Create a new FASTQ record
-                new_record = SeqRecord(
-                    trimmed_seq,
-                    id=str(unique_id_counter),
-                    description="",
-                    letter_annotations={"phred_quality": trimmed_qual}  # Preserve quality scores
-                )
+                    # Ensure it's a Seq object
+                    seq_obj = Seq(trimmed_seq)
 
-                selected_records.append(new_record)
-                unique_id_counter += 1
+                    # Then reverse complement if needed
+                    seq_final = seq_obj if rec['orientation'] == 'direct' else seq_obj.reverse_complement()
+
+                    # Create a new FASTQ record
+                    new_record = SeqRecord(
+                        seq_final,
+                        id=str(unique_id_counter),
+                        description="",
+                        letter_annotations={"phred_quality": trimmed_qual}  # Preserve quality scores
+                    )
+
+                    selected_records.append(new_record)
+                    unique_id_counter += 1
 
     print(f'Selected records: {len(selected_records)}')
     print(f'Number of records: {n_records}')
@@ -181,25 +249,62 @@ def fastq_to_fasta(input_fastq: str, output_fasta: str):
     with open(output_fasta, "w") as fasta_handle:
         SeqIO.write(SeqIO.parse(input_fastq, "fastq"), fasta_handle, "fasta")
 def main():
-    fastq_file = Path("data_samples/bigfile.fastq")
+    fastq_file = Path("data_samples/new_sequencing_may2025/reads/barcode14.fastq")
     query_dict = {
-        # "Aptamer/1": "TGC**CGAGAGC",
-        # "Aptamer/2": "GGGCC*GCA",
-        # "Aptamer/1/RC": reverse_complement("TGC**CGAGAGC"),
-        # "Aptamer/2/RC": reverse_complement("GGGCC*GCA"),
-        "Left": "CTCCTCTGACTGTAACCACG",
-        "RCLeft": reverse_complement("CTCCTCTGACTGTAACCACG"),
-        "Right": "GGCTTCTGGACTACCTATGC",
-        "RCRight": reverse_complement("GGCTTCTGGACTACCTATGC"),
+        "RCRight|R": "CTTTAGGGCC",
+        "RCLeft|L": "CGAGAGCAG",
+        "Left|R": "CCTGCTCTCG",
+        "Right|L": "GGCCCTAAAG",
+        "RCLeft|R": "ATCCATGAAG",
+        "Left|L": "CTTCATGGAT",
+        "Right|R": "CTTAGCACGA",
+        "RCRight|L": "TCGTGCTAAG",
+        # "Right/c": "TAAAGCTTAG",
+        # "Left/c": "TGGATCCTGC",
+        # "RCRight/c": "CTAAGCTTTA",
+        # "RCLeft/c": "GCAGGATCCA"
     }
 
+    # query_dict = {
+    #     "Left": "CTTCATGGATCCTGCTCTCG",
+    #     "RCLeft": "CGAGAGCAGGATCCATGAAG",
+    #     "Right": "GGCCCTAAAGCTTAGCACGA",
+    #     "RCRight": "TCGTGCTAAGCTTTAGGGCC",
+    #     # "RCLeft-Left": "CGAGAGCNGGATCCNGCTCTCG",
+    #     # "Right-RCRight": "GGCCCNAAAGCTTTAGGGCC"
+    # }
+    # query_dict = {
+    #     # "Aptamer/1": "TGC**CGAGAGC",
+    #     # "Aptamer/2": "GGGCC*GCA",
+    #     # "Aptamer/1/RC": reverse_complement("TGC**CGAGAGC"),
+    #     # "Aptamer/2/RC": reverse_complement("GGGCC*GCA"),
+    #     "Left": "CTTCATGGATCCTGCTCTCG",
+    #     "RCLeft": reverse_complement("CTTCATGGATCCTGCTCTCG"),
+    #     "Right": "GGCCCTAAAGCTTAGCACGA",
+    #     "RCRight": reverse_complement("GGCCCTAAAGCTTAGCACGA"),
+    #     "Barcode": "CGTCAACTGACAGTGGTTCGTACT",
+    #     "Barcode RC": "AGTACGAACCACTGTCAGTTGACG"
+    # }
+
     # Process FASTQ file
-    processor = FastqProcessor(fastq_file, query_dict)
+    processor = FastqProcessor(fastq_file, query_dict,1.0)
     sequence_matches = processor.process_file()
-    filtered = filter_sequences(sequence_matches, 30)
-    output_fastq_path = "cd133_trimmed.fastq"
+    df = pd.DataFrame(sequence_matches)
+    # df.to_csv('sequence_matches.csv')
+    #print(sequence_matches)
+    # rules = [
+    #     {"primer": "Left/r", "distance_min": 50, "distance_max": 100, "orientation": "direct"},]
+    #          # {"primer": "Right/r", "distance_min": 50, "distance_max": 100, "orientation": "rc"}]
+    # filtered = filter_by_distance_from_primer(sequence_matches, rules)
+    rules = [{"start": "Left|R", "end": "Right|L", "orientation": "direct"}]
+            # {"start": "RCRight/r", "end": "RCLeft/l", "orientation": "rc"}]
+    filtered = filter_by_neighbour_distances(sequence_matches, rules, 0, 0, True)
+    # filtered = filter_sequences(sequence_matches, 30)
+    print(filtered)
+    output_fastq_path = "junctions/barcode14_trimmed_left_right_0.fastq"
     trim_sequences(fastq_file, output_fastq_path, filtered)
-    fastq_to_fasta(output_fastq_path, 'cd133_trimmed.fasta')
+    fastq_to_fasta(output_fastq_path, 'junctions/barcode14_trimmed_left_right_0.fasta')
+
 
     # direct_indices, rc_indices = select_valid_indices(sequence_matches)
     # filter_fastq_by_indices(fastq_file, 'filtered.fastq',

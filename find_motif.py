@@ -2,7 +2,7 @@ from Bio import SeqIO
 from Bio import motifs
 
 # Читаем последовательности из FASTQ-файла
-fastq_file = "cd133_trimmed.fastq"
+fastq_file = "barcode06_trimmed_direct.fastq"
 sequences = [str(record.seq) for record in SeqIO.parse(fastq_file, "fastq")]
 
 # Найти минимальную длину последовательности

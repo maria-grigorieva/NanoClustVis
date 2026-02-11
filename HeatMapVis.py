@@ -69,7 +69,7 @@ class SequenceVisualizer:
 
     def create_visualization_matrix(self, compressed_matches: List[List[SequenceMatch]]) -> np.ndarray:
         """Create visualization matrix from compressed matches with length information"""
-        vis_width = self.calculate_visualization_width(compressed_matches, True)
+        vis_width = self.calculate_visualization_width(compressed_matches, False)
         if vis_width == 0:
             raise ValueError("No matches found in sequences")
 
