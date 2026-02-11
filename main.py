@@ -37,7 +37,8 @@ def record_reverse_complement(record: SeqRecord) -> SeqRecord:
     )
 
 def main():
-    fastq_file = Path("data_samples/new_sequencing_may2025/reads/barcode06.fastq")
+    #fastq_file = Path("data_samples/new_sequencing_may2025/reads/barcode06.fastq")
+    fastq_file = Path("/Users/maria/PycharmProjects/oxo_dG/input_files/2026_cassette/fastq/calls.sorted.fastq")
 
     # query_dict = {
     #     # "Left": "CTTCATGGATCCNGCTCTCG",
@@ -53,15 +54,26 @@ def main():
     #     #"Barcode 6": "TCCATTCCCTCCGATAGATGAAAC",
     #     #"Barcode 6 RC": "GTTTCATCTATCGGAGGGAATGGA"
     # }
+    # query_dict = {
+    #     "RCRight/r": "CTTTAGGGCC",
+    #     "RCRight/l": "TCGTGCTAAG",
+    #     "RCLeft/l": "CGAGAGCAG",
+    #     "RCLeft/r": "ATCCATGAAG",
+    #     "Left/l": "CTTCATGGAT",
+    #     "Left/r": "CCTGCTCTCG",
+    #     "Right/l": "GGCCCTAAAG",
+    #     "Right/r": "CTTAGCACGA",
+    # }
     query_dict = {
-        "RCRight/r": "CTTTAGGGCC",
-        "RCRight/l": "TCGTGCTAAG",
-        "RCLeft/l": "CGAGAGCAG",
-        "RCLeft/r": "ATCCATGAAG",
-        "Left/l": "CTTCATGGAT",
-        "Left/r": "CCTGCTCTCG",
-        "Right/l": "GGCCCTAAAG",
-        "Right/r": "CTTAGCACGA",
+        "A1": "GATCAGTCCGATATC",
+        "A2": "TCGACATGCTAGTGC",
+        "A3": "GCTATCGGATACGTC",
+        "S1": "ATGACTGCCA",
+        "L": "TTTTTT",
+        "S2": "TGGCAGTCAT",
+        "A1C": "GACGTATCCGATAGC",
+        "A2C": "GCACTAGCATGTCGA",
+        "A3C": "GATATCGGACTGATC"
     }
     # query_dict = {
     #     "Left": "CTTCATGGATCCNGCTCTCG",
@@ -148,9 +160,9 @@ def main():
     processor = FastqProcessor(fastq_file, query_dict, 1.0)
     sequence_matches = processor.process_file()
 
-    print(processor.lengths_stats)
-
-    print(processor.matches_stats(sequence_matches))
+    # print(processor.lengths_stats)
+    #
+    # print(processor.matches_stats(sequence_matches))
 
     #filtered_sequence_matches = processor.filter_by_distance(sequence_matches, threshold=0)
     #processed_sequence_matches = processor.remove_empty_records(filtered_sequence_matches)
