@@ -2,3 +2,6 @@ data_samples/
 output/
 .idea/
 __pycache__/
+*.fastq
+*.pkl
+*.pth
