@@ -22,6 +22,8 @@ from tqdm import tqdm
 from sklearn.cluster import MiniBatchKMeans
 from scipy.spatial import cKDTree
 from Embeddings import SequenceEmbedding
+import pyarrow.parquet as pq
+import pandas as pd
 
 warnings.filterwarnings('ignore')
 
