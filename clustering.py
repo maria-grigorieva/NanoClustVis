@@ -330,17 +330,17 @@ def optimized_clustering_pipeline(
         results_df[f'feature_{col}'] = features[:, i]
 
     # Сохраняем результаты
-    output_path = "clustering_results_optimized.parquet"
+    output_path = "clustering_results.parquet"
     results_df.to_parquet(output_path, index=False, compression='snappy')
 
     # Также сохраняем в CSV для быстрого просмотра
-    results_df[['seq_id', 'cluster']].to_csv("clustering_results_optimized.csv", index=False)
+    results_df[['seq_id', 'cluster']].to_csv("clustering_results.csv", index=False)
 
     total_elapsed = time.time() - total_start
 
     print(f"\nРЕЗУЛЬТАТЫ СОХРАНЕНЫ:")
     print(f"- Parquet: {output_path}")
-    print(f"- CSV: clustering_results_optimized.csv")
+    print(f"- CSV: clustering_results.csv")
     print(f"\nСтатистика по кластерам:")
     print(results_df['cluster'].value_counts().sort_index())
     print(f"\nОбщее время выполнения: {total_elapsed:.2f} секунд")

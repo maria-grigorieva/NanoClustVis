@@ -58,102 +58,97 @@ class OptimizedSequenceVisualizer:
 
         return colors_rgb
 
-    def load_data_chunked(self,
-                          matches_path: str,
-                          clusters_path: str,
-                          chunk_size: int = 100000) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Загружает данные чанками для экономии памяти.
+    def load_data_chunked(self, matches_path, clusters_path, chunk_size=100_000):
 
-        Returns:
-            Tuple[cluster_ids, positions, lengths, query_indices, seq_ids]
-        """
-        print(f"Загрузка данных чанками по {chunk_size} записей...")
-
-        # Загружаем кластеры (они обычно небольшие)
         clusters_df = pd.read_parquet(clusters_path)
         seq_to_cluster = clusters_df.set_index('seq_id')['cluster'].to_dict()
 
-        # Освобождаем память
-        del clusters_df
-        gc.collect()
+        parquet = pq.ParquetFile(matches_path)
 
-        # Подготавливаем массивы для результатов
         all_clusters = []
         all_positions = []
         all_lengths = []
         all_query_indices = []
         all_seq_ids = []
 
-        # Читаем matches файл чанками
-        parquet_file = pq.ParquetFile(matches_path)
+        valid_seq_ids = set(seq_to_cluster)
 
-        for batch in tqdm(parquet_file.iter_batches(batch_size=chunk_size),
-                          desc="Обработка чанков"):
-            df = batch.to_pandas()
+        for batch in parquet.iter_batches(batch_size=chunk_size):
 
-            # Фильтруем только те seq_id, которые есть в кластерах
-            mask = df['seq_id'].isin(seq_to_cluster)
-            df_filtered = df[mask]
+            # строки → только через pylist
+            seq_ids = batch['seq_id'].to_pylist()
 
-            if len(df_filtered) == 0:
+            mask = np.fromiter(
+                (sid in valid_seq_ids for sid in seq_ids),
+                dtype=bool,
+                count=len(seq_ids)
+            )
+
+            if not mask.any():
                 continue
 
-            # Преобразуем query_name в индексы
-            query_indices = df_filtered['query_name'].map(self.query_to_idx).values
-            valid_mask = ~np.isnan(query_indices)
-            df_filtered = df_filtered[valid_mask]
-            query_indices = query_indices[valid_mask].astype(np.int32)
+            seq_ids = np.array(seq_ids, dtype=object)[mask]
 
-            # Получаем кластеры
-            clusters = np.array([seq_to_cluster[seq_id] for seq_id in df_filtered['seq_id']])
+            clusters = np.fromiter(
+                (seq_to_cluster[s] for s in seq_ids),
+                dtype=np.int32,
+                count=len(seq_ids)
+            )
 
-            # Добавляем в общие массивы
-            all_clusters.append(clusters)
-            all_positions.append(df_filtered['position'].values.astype(np.int32))
-            all_lengths.append(df_filtered['length'].values.astype(np.int32))
-            all_query_indices.append(query_indices)
-            all_seq_ids.append(df_filtered['seq_id'].values)
+            positions = batch['position'].to_numpy()[mask]
+            lengths = batch['length'].to_numpy()[mask]
 
-        # Объединяем все чанки
-        if all_clusters:
-            return (np.concatenate(all_clusters),
-                    np.concatenate(all_positions),
-                    np.concatenate(all_lengths),
-                    np.concatenate(all_query_indices),
-                    np.concatenate(all_seq_ids))
-        else:
-            return np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
+            query_names = batch['query_name'].to_pylist()
 
-    def create_cluster_groups(self,
-                              clusters: np.ndarray,
-                              positions: np.ndarray,
-                              lengths: np.ndarray,
-                              query_indices: np.ndarray,
-                              seq_ids: np.ndarray) -> Dict:
-        """
-        Создает группы по кластерам используя numpy для скорости.
-        """
-        print("Группировка по кластерам...")
-        start_time = time.time()
+            query_indices = np.fromiter(
+                (self.query_to_idx.get(q, 0) for q in query_names),
+                dtype=np.int16
+            )[mask]
 
-        # Получаем уникальные кластеры
-        unique_clusters = np.unique(clusters)
+            valid = query_indices > 0
 
-        # Создаем словарь для хранения индексов
+            all_clusters.append(clusters[valid])
+            all_positions.append(positions[valid])
+            all_lengths.append(lengths[valid])
+            all_query_indices.append(query_indices[valid])
+            all_seq_ids.append(seq_ids[valid])
+
+        return (
+            np.concatenate(all_clusters),
+            np.concatenate(all_positions),
+            np.concatenate(all_lengths),
+            np.concatenate(all_query_indices),
+            np.concatenate(all_seq_ids)
+        )
+
+    def create_cluster_groups(self, clusters, positions, lengths, query_indices, seq_ids):
+
+        order = np.argsort(clusters)
+
+        clusters = clusters[order]
+        positions = positions[order]
+        lengths = lengths[order]
+        query_indices = query_indices[order]
+        seq_ids = seq_ids[order]
+
+        split_points = np.flatnonzero(np.diff(clusters)) + 1
+
         cluster_groups = {}
 
-        for cluster in tqdm(unique_clusters, desc="Группировка кластеров"):
-            mask = clusters == cluster
-            cluster_groups[int(cluster)] = {
-                'positions': positions[mask],
-                'lengths': lengths[mask],
-                'query_indices': query_indices[mask],
-                'seq_ids': seq_ids[mask]
+        start = 0
+        unique_clusters = np.unique(clusters)
+
+        for i, end in enumerate(np.append(split_points, len(clusters))):
+            c = unique_clusters[i]
+
+            cluster_groups[int(c)] = {
+                'positions': positions[start:end],
+                'lengths': lengths[start:end],
+                'query_indices': query_indices[start:end],
+                'seq_ids': seq_ids[start:end]
             }
 
-        elapsed = time.time() - start_time
-        print(f"Группировка завершена за {elapsed:.2f} сек")
+            start = end
 
         return cluster_groups
 
@@ -258,6 +253,11 @@ class OptimizedSequenceVisualizer:
             clusters, positions, lengths, query_indices, seq_ids
         )
 
+        cluster_sizes = {
+            cluster_id: len(np.unique(cluster_groups[cluster_id]['seq_ids']))
+            for cluster_id in cluster_groups
+        }
+
         # Освобождаем память
         del clusters, positions, lengths, query_indices, seq_ids
         gc.collect()
@@ -285,7 +285,7 @@ class OptimizedSequenceVisualizer:
                 compressed_data.append(compressed)
                 cluster_ids.append(cluster_id)
 
-        result = (compressed_data, np.array(cluster_ids))
+        result = (compressed_data, np.array(cluster_ids), cluster_sizes)
 
         if use_cache:
             self._cache[cache_key] = result
@@ -359,118 +359,80 @@ class OptimizedSequenceVisualizer:
 
         return vis_matrix
 
-    def plot_heatmap_optimized(self,
-                               vis_matrix: np.ndarray,
-                               cluster_assignments: np.ndarray,
-                               title: str = 'Sequence Match Heatmap',
-                               figsize: Tuple[int, int] = (22, 12),
-                               dpi: int = 100) -> plt.Figure:
-        """
-        Оптимизированная версия построения тепловой карты.
-        Использует коллекции вместо множества отдельных Rectangle.
-        """
+    def plot_heatmap_optimized(
+            self,
+            vis_matrix,
+            cluster_assignments,
+            cluster_sizes,
+            title='Sequence Match Heatmap',
+            figsize=(22, 12),
+            dpi=100):
+
         from matplotlib.collections import PatchCollection
 
         fig = plt.figure(figsize=figsize, dpi=dpi)
         gs = plt.GridSpec(1, 24)
-        ax_main = plt.subplot(gs[0, :17])
 
-        n_rows = vis_matrix.shape[0]
-        max_x = vis_matrix.shape[1]
+        ax_main = plt.subplot(gs[0, :17])
+        ax_clusters = plt.subplot(gs[0, 19:])
+
+        n_rows, max_x = vis_matrix.shape[:2]
 
         ax_main.set_xlim(0, max_x)
         ax_main.set_ylim(0, n_rows)
 
-        # Создаем коллекции для каждого типа запроса
         patches_by_query = defaultdict(list)
 
         for row_idx in range(n_rows):
-            col_idx = 0
-            while col_idx < max_x:
-                query_idx = int(vis_matrix[row_idx, col_idx, 0])
-                if query_idx > 0:
-                    length = int(vis_matrix[row_idx, col_idx, 1])
 
-                    rect = Rectangle(
-                        (col_idx, row_idx),
-                        length,
-                        1,
-                        linewidth=0.5,
-                        edgecolor='gray'
-                    )
+            row = vis_matrix[row_idx, :, 0]
+            nonzero = np.flatnonzero(row)
 
-                    patches_by_query[query_idx].append(rect)
-                    col_idx += length
-                else:
-                    col_idx += 1
+            i = 0
+            while i < len(nonzero):
+                col = nonzero[i]
+                q = int(row[col])
+                length = int(vis_matrix[row_idx, col, 1])
 
-        # Добавляем коллекции на график
-        for query_idx, patches in patches_by_query.items():
-            if query_idx <= len(self.colors_rgb):
-                collection = PatchCollection(
-                    patches,
-                    facecolor=self.colors_rgb[query_idx - 1][:3],
-                    alpha=0.8,
-                    edgecolor='gray',
-                    linewidth=0.5
+                patches_by_query[q].append(
+                    Rectangle((col, row_idx), length, 1)
                 )
-                ax_main.add_collection(collection)
 
-        # Настройка сетки
-        ax_main.grid(True, which='major', color='gray', linestyle='-', alpha=0.2)
-        ax_main.set_xticks(np.arange(0, max_x, 50))
+                i += length if length > 0 else 1
 
-        # Информация о кластерах
-        ax_clusters = plt.subplot(gs[0, 19:])
-        unique_clusters = np.unique(cluster_assignments)
-        cluster_sizes = [np.sum(cluster_assignments == c) for c in unique_clusters]
+        for q, patches in patches_by_query.items():
 
-        cluster_positions = np.arange(len(unique_clusters)) + np.min(unique_clusters)
-        ax_clusters.barh(cluster_positions, cluster_sizes)
+            if q <= len(self.colors_rgb):
+                ax_main.add_collection(
+                    PatchCollection(
+                        patches,
+                        facecolor=self.colors_rgb[q - 1][:3],
+                        edgecolor='gray',
+                        linewidth=0.3,
+                        alpha=0.85
+                    )
+                )
+
+        ax_main.set_title(title)
+        ax_main.set_xlabel('Position')
+        ax_main.set_ylabel('Sequences')
+
+        # ✅ ПРАВИЛЬНЫЙ ПОДСЧЁТ
+        # unique_clusters, cluster_sizes = np.unique(
+        #     cluster_assignments,
+        #     return_counts=True
+        # )
+        clusters = np.array(list(cluster_sizes.keys()))
+        sizes = np.array(list(cluster_sizes.values()))
+
+        ax_clusters.barh(clusters, sizes)
+        #
+        # ax_clusters.barh(unique_clusters, cluster_sizes)
+
         ax_clusters.set_title('Sequences per Cluster')
-        ax_clusters.set_xlabel('Number of Sequences')
-        ax_clusters.set_ylabel('Cluster ID')
+        ax_clusters.set_xlabel('Count')
+        ax_clusters.set_ylabel('Cluster')
 
-        # Легенда
-        legend_elements = []
-        query_keys = list(self.query_dict.keys())
-
-        for i, query_key in enumerate(query_keys):
-            color = self.colors_rgb[i][:3]
-            legend_elements.append(
-                Rectangle((0, 0), 1, 1, facecolor=color, edgecolor='gray')
-            )
-
-        ax_main.legend(legend_elements,
-                       query_keys,
-                       bbox_to_anchor=(0.85, 1),
-                       loc='upper left',
-                       fontsize='small')
-
-        # Заголовки и подписи
-        ax_main.set_title(title, fontsize=14)
-        ax_main.set_xlabel('Position in Sequence (bp)', fontsize=12)
-        ax_main.set_ylabel('Sequence Clusters', fontsize=12)
-
-        # Статистика
-        stats_text = (
-            f'Total Sequences: {sum(cluster_sizes)}\n'
-            f'Number of Clusters: {len(unique_clusters)}\n'
-            f'Average Cluster Size: {np.mean(cluster_sizes):.1f}\n'
-            f'Max Cluster Size: {max(cluster_sizes)}'
-        )
-        plt.figtext(0.94, 0.15, stats_text,
-                    bbox=dict(facecolor='white', alpha=0.8),
-                    verticalalignment='center',
-                    fontsize=10)
-
-        # Выравнивание
-        ax_clusters.set_ylim(np.min(cluster_assignments) - 0.5,
-                             np.max(cluster_assignments) + 0.5)
-        ax_clusters.set_yticks(range(np.min(cluster_assignments),
-                                     np.max(cluster_assignments) + 1))
-
-        plt.tight_layout()
         return fig
 
     def cleanup(self):
@@ -500,7 +462,7 @@ def run_optimized_visualization(matches_path: str,
         print("ОПТИМИЗИРОВАННАЯ ВИЗУАЛИЗАЦИЯ КЛАСТЕРОВ")
         print("=" * 60)
 
-        compressed_data, cluster_ids = visualizer.prepare_visualization_data(
+        compressed_data, cluster_ids, cluster_sizes = visualizer.prepare_visualization_data(
             matches_path=matches_path,
             clusters_path=clusters_path,
             compression_method=compression_method,
@@ -517,6 +479,7 @@ def run_optimized_visualization(matches_path: str,
         fig = visualizer.plot_heatmap_optimized(
             vis_matrix=vis_matrix,
             cluster_assignments=cluster_ids,
+            cluster_sizes=cluster_sizes,
             title=f'Sequence Clusters Visualization ({compression_method} compression)'
         )
 
